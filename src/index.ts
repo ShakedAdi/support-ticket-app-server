@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { prisma } from './lib/prisma';
 
 dotenv.config();
 
@@ -16,4 +17,8 @@ app.get('/api/health', (_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+});
+
+process.on('beforeExit', async () => {
+  await prisma.$disconnect();
 });
