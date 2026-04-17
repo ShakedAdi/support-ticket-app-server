@@ -10,5 +10,5 @@ export const auth = betterAuth({
     enabled: true,
     disableSignUp: true,
   },
-  trustedOrigins: [process.env.CLIENT_URL ?? 'http://localhost:5173'],
+  trustedOrigins: process.env.CLIENT_URL ? [process.env.CLIENT_URL] : [],
 });
