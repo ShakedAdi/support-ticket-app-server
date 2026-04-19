@@ -11,4 +11,12 @@ export const auth = betterAuth({
     disableSignUp: true,
   },
   trustedOrigins: process.env.CLIENT_URL ? [process.env.CLIENT_URL] : [],
+  user: {
+    additionalFields: {
+      role: {
+        type: 'string',
+        input: false,
+      },
+    },
+  },
 });
