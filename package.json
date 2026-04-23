@@ -20,7 +20,8 @@
     "express-rate-limit": "^8.3.2",
     "helmet": "^8.1.0",
     "pg": "^8.20.0",
-    "prisma": "^7.7.0"
+    "prisma": "^7.7.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
