@@ -82,6 +82,7 @@ app.use(express.json());
 
 app.get('/api/users', requireAuth, requireAdmin, async (_req, res) => {
   const users = await prisma.user.findMany({
+    where: { deletedAt: null },
     select: { id: true, name: true, email: true, role: true, createdAt: true },
     orderBy: { createdAt: 'asc' },
   });
@@ -188,6 +189,31 @@ app.put('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
   });
 
   res.json(updated);
+});
+
+app.delete('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  if (req.user?.id === id) {
+    res.status(403).json({ error: 'You cannot delete your own account' });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id, deletedAt: null },
+    select: { id: true },
+  });
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
+  await prisma.$transaction([
+    prisma.session.deleteMany({ where: { userId: id } }),
+    prisma.user.update({ where: { id }, data: { deletedAt: new Date() } }),
+  ]);
+
+  res.status(204).send();
 });
 
 app.listen(PORT, () => {
