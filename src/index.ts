@@ -18,6 +18,13 @@ const createUserSchema = z.object({
   password: z.string().trim().min(8, 'Password must be at least 8 characters'),
 });
 
+const updateUserSchema = z.object({
+  name: z.string().trim().min(3, 'Name must be at least 3 characters'),
+  email: z.string().email('Valid email is required'),
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: z.string().min(8, 'New password must be at least 8 characters').optional().or(z.literal('')),
+});
+
 async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString('hex');
   const key = await new Promise<Buffer>((resolve, reject) => {
@@ -30,6 +37,20 @@ async function hashPassword(password: string): Promise<string> {
     );
   });
   return `${salt}:${key.toString('hex')}`;
+}
+
+async function verifyPassword(input: string, stored: string): Promise<boolean> {
+  const [salt, storedKey] = stored.split(':');
+  const key = await new Promise<Buffer>((resolve, reject) => {
+    scrypt(
+      input.normalize('NFKC'),
+      salt,
+      64,
+      { N: 16384, r: 16, p: 1, maxmem: 128 * 16384 * 16 * 2 },
+      (err, derivedKey) => (err ? reject(err) : resolve(derivedKey as Buffer))
+    );
+  });
+  return key.toString('hex') === storedKey;
 }
 
 const app = express();
@@ -108,6 +129,65 @@ app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
   });
 
   res.status(201).json(user);
+});
+
+app.put('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  const result = updateUserSchema.safeParse(req.body);
+  if (!result.success) {
+    res.status(400).json({ error: result.error.issues[0].message });
+    return;
+  }
+  const { name, email, currentPassword, newPassword } = result.data;
+
+  const user = await prisma.user.findUnique({ where: { id }, select: { id: true, email: true } });
+  if (!user) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+
+  const account = await prisma.account.findFirst({
+    where: { userId: id, providerId: 'credential' },
+    select: { id: true, password: true },
+  });
+  if (!account?.password) {
+    res.status(400).json({ error: 'No credential account found for this user' });
+    return;
+  }
+
+  const valid = await verifyPassword(currentPassword, account.password);
+  if (!valid) {
+    res.status(401).json({ error: 'Current password is incorrect' });
+    return;
+  }
+
+  if (email !== user.email) {
+    const conflict = await prisma.user.findUnique({ where: { email } });
+    if (conflict) {
+      res.status(409).json({ error: 'A user with this email already exists' });
+      return;
+    }
+  }
+
+  const now = new Date();
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const u = await tx.user.update({
+      where: { id },
+      data: { name, email, updatedAt: now },
+      select: { id: true, name: true, email: true, role: true, createdAt: true },
+    });
+    if (newPassword) {
+      await tx.account.update({
+        where: { id: account.id },
+        data: { password: await hashPassword(newPassword), updatedAt: now },
+      });
+    }
+    return u;
+  });
+
+  res.json(updated);
 });
 
 app.listen(PORT, () => {
