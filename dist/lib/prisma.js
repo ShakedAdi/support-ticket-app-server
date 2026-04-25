@@ -5,7 +5,10 @@ const pg_1 = require("pg");
 const adapter_pg_1 = require("@prisma/adapter-pg");
 const client_1 = require("../generated/prisma/client");
 const pool = new pg_1.Pool({
-    connectionString: process.env.DATABASE_URL,
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    database: process.env.PGDATABASE,
+    host: process.env.PGHOST || '/tmp',
 });
 const adapter = new adapter_pg_1.PrismaPg(pool);
 const globalForPrisma = globalThis;

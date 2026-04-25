@@ -11,6 +11,7 @@ import { auth } from './lib/auth';
 import { requireAuth } from './middleware/requireAuth';
 import { requireAdmin } from './middleware/requireAdmin';
 import { Role } from './generated/prisma/enums';
+import webhookRouter from './routes/webhooks';
 
 const createUserSchema = z.object({
   name: z.string().trim().min(3, 'Name must be at least 3 characters'),
@@ -79,6 +80,8 @@ if (process.env.NODE_ENV === 'production') {
 app.all('/api/auth/*', toNodeHandler(auth));
 
 app.use(express.json());
+
+app.use('/api/webhooks', webhookRouter);
 
 app.get('/api/users', requireAuth, requireAdmin, async (_req, res) => {
   const users = await prisma.user.findMany({

@@ -17,6 +17,12 @@ enum Role {
   agent
 }
 
+enum TicketStatus {
+  open
+  in_progress
+  resolved
+}
+
 model User {
   id            String    @id
   name          String
@@ -29,8 +35,23 @@ model User {
   deletedAt     DateTime?
   sessions      Session[]
   accounts      Account[]
+  tickets       Ticket[]
 
   @@map("user")
+}
+
+model Ticket {
+  id           String       @id @default(cuid())
+  subject      String
+  body         String
+  senderEmail  String
+  status       TicketStatus @default(open)
+  assignedTo   User?        @relation(fields: [assignedToId], references: [id])
+  assignedToId String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@map("ticket")
 }
 
 model Session {

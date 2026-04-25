@@ -9,3 +9,13 @@
 * 🟢 You can import this file directly.
 */
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.TicketStatus = exports.Role = void 0;
+exports.Role = {
+    admin: 'admin',
+    agent: 'agent'
+};
+exports.TicketStatus = {
+    open: 'open',
+    in_progress: 'in_progress',
+    resolved: 'resolved'
+};

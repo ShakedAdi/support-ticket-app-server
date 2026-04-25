@@ -10,6 +10,23 @@ exports.auth = (0, better_auth_1.betterAuth)({
     }),
     emailAndPassword: {
         enabled: true,
+        disableSignUp: true,
     },
-    trustedOrigins: [process.env.CLIENT_URL ?? 'http://localhost:5173'],
+    trustedOrigins: process.env.CLIENT_URL ? [process.env.CLIENT_URL] : [],
+    advanced: {
+        cookiePrefix: 'helpdesk',
+        defaultCookieAttributes: {
+            secure: process.env.NODE_ENV === 'production',
+            httpOnly: true,
+            sameSite: 'lax',
+        },
+    },
+    user: {
+        additionalFields: {
+            role: {
+                type: 'string',
+                input: false,
+            },
+        },
+    },
 });
