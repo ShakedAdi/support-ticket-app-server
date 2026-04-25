@@ -83,6 +83,21 @@ app.use(express.json());
 
 app.use('/api/webhooks', webhookRouter);
 
+app.get('/api/tickets', requireAuth, async (_req, res) => {
+  const tickets = await prisma.ticket.findMany({
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      subject: true,
+      senderEmail: true,
+      status: true,
+      createdAt: true,
+      assignedTo: { select: { id: true, name: true } },
+    },
+  });
+  res.json(tickets);
+});
+
 app.get('/api/users', requireAuth, requireAdmin, async (_req, res) => {
   const users = await prisma.user.findMany({
     where: { deletedAt: null },

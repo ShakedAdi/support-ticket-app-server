@@ -7,7 +7,11 @@ const router = Router();
 const inboundEmailSchema = z
   .object({
     From: z.string().email('Valid From email is required'),
-    Subject: z.string().min(1, 'Subject is required'),
+    Subject: z.any().superRefine((val, ctx) => {
+      if (typeof val !== 'string' || val.length === 0) {
+        ctx.addIssue({ code: 'custom', message: 'Subject is required' });
+      }
+    }),
     TextBody: z.string().optional(),
     HtmlBody: z.string().optional(),
   })

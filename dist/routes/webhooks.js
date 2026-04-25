@@ -7,7 +7,11 @@ const router = (0, express_1.Router)();
 const inboundEmailSchema = zod_1.z
     .object({
     From: zod_1.z.string().email('Valid From email is required'),
-    Subject: zod_1.z.string().min(1, 'Subject is required'),
+    Subject: zod_1.z.any().superRefine((val, ctx) => {
+        if (typeof val !== 'string' || val.length === 0) {
+            ctx.addIssue({ code: 'custom', message: 'Subject is required' });
+        }
+    }),
     TextBody: zod_1.z.string().optional(),
     HtmlBody: zod_1.z.string().optional(),
 })
