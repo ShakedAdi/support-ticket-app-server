@@ -83,9 +83,23 @@ app.use(express.json());
 
 app.use('/api/webhooks', webhookRouter);
 
-app.get('/api/tickets', requireAuth, async (_req, res) => {
+const SORTABLE_FIELDS = ['subject', 'senderEmail', 'status', 'createdAt', 'assignedToName'] as const;
+type SortableField = (typeof SORTABLE_FIELDS)[number];
+
+app.get('/api/tickets', requireAuth, async (req, res) => {
+  const sortBy = (SORTABLE_FIELDS as readonly string[]).includes(req.query.sortBy as string)
+    ? (req.query.sortBy as SortableField)
+    : 'createdAt';
+  const sortOrder = req.query.sortOrder === 'asc' ? 'asc' : 'desc';
+
+  const order = sortOrder as 'asc' | 'desc';
+  const orderBy =
+    sortBy === 'assignedToName'
+      ? { assignedTo: { name: order } }
+      : { [sortBy]: order };
+
   const tickets = await prisma.ticket.findMany({
-    orderBy: { createdAt: 'desc' },
+    orderBy,
     select: {
       id: true,
       subject: true,
