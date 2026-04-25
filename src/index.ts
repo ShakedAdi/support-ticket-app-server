@@ -86,6 +86,9 @@ app.use('/api/webhooks', webhookRouter);
 const SORTABLE_FIELDS = ['subject', 'senderEmail', 'status', 'createdAt', 'assignedToName'] as const;
 type SortableField = (typeof SORTABLE_FIELDS)[number];
 
+const TICKET_STATUSES = ['open', 'in_progress', 'resolved'] as const;
+type TicketStatusFilter = (typeof TICKET_STATUSES)[number];
+
 app.get('/api/tickets', requireAuth, async (req, res) => {
   const sortBy = (SORTABLE_FIELDS as readonly string[]).includes(req.query.sortBy as string)
     ? (req.query.sortBy as SortableField)
@@ -98,7 +101,26 @@ app.get('/api/tickets', requireAuth, async (req, res) => {
       ? { assignedTo: { name: order } }
       : { [sortBy]: order };
 
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+  const statusParam = req.query.status as string | undefined;
+  const statusFilter = (TICKET_STATUSES as readonly string[]).includes(statusParam ?? '')
+    ? (statusParam as TicketStatusFilter)
+    : null;
+
+  const where = {
+    ...(statusFilter ? { status: statusFilter } : {}),
+    ...(search
+      ? {
+          OR: [
+            { subject: { contains: search, mode: 'insensitive' as const } },
+            { senderEmail: { contains: search, mode: 'insensitive' as const } },
+          ],
+        }
+      : {}),
+  };
+
   const tickets = await prisma.ticket.findMany({
+    where,
     orderBy,
     select: {
       id: true,
