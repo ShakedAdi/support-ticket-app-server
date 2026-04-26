@@ -9,6 +9,8 @@ const pool = new pg_1.Pool({
     password: process.env.PGPASSWORD,
     database: process.env.PGDATABASE,
     host: process.env.PGHOST || '/tmp',
+    port: process.env.PGPORT ? parseInt(process.env.PGPORT) : 5432,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 const adapter = new adapter_pg_1.PrismaPg(pool);
 const globalForPrisma = globalThis;

@@ -1,9 +1,44 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-require("dotenv/config");
+require("./instrument");
+const Sentry = __importStar(require("@sentry/node"));
+const path_1 = __importDefault(require("path"));
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
@@ -11,6 +46,8 @@ const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const node_crypto_1 = require("node:crypto");
 const zod_1 = require("zod");
 const node_1 = require("better-auth/node");
+const openai_1 = require("@ai-sdk/openai");
+const ai_1 = require("ai");
 const prisma_1 = require("./lib/prisma");
 const auth_1 = require("./lib/auth");
 const requireAuth_1 = require("./middleware/requireAuth");
@@ -65,6 +102,225 @@ if (process.env.NODE_ENV === 'production') {
 app.all('/api/auth/*', (0, node_1.toNodeHandler)(auth_1.auth));
 app.use(express_1.default.json());
 app.use('/api/webhooks', webhooks_1.default);
+app.get('/api/health', (_req, res) => {
+    res.json({ status: 'ok' });
+});
+const SORTABLE_FIELDS = ['subject', 'senderEmail', 'status', 'createdAt', 'assignedToName'];
+const TICKET_STATUSES = ['open', 'in_progress', 'resolved'];
+app.get('/api/tickets', requireAuth_1.requireAuth, async (req, res) => {
+    const sortBy = SORTABLE_FIELDS.includes(req.query.sortBy)
+        ? req.query.sortBy
+        : 'createdAt';
+    const sortOrder = req.query.sortOrder === 'asc' ? 'asc' : 'desc';
+    const order = sortOrder;
+    const orderBy = sortBy === 'assignedToName'
+        ? { assignedTo: { name: order } }
+        : { [sortBy]: order };
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const statusParam = req.query.status;
+    const statusFilter = TICKET_STATUSES.includes(statusParam ?? '')
+        ? statusParam
+        : null;
+    const where = {
+        ...(statusFilter ? { status: statusFilter } : {}),
+        ...(search
+            ? {
+                OR: [
+                    { subject: { contains: search, mode: 'insensitive' } },
+                    { senderEmail: { contains: search, mode: 'insensitive' } },
+                ],
+            }
+            : {}),
+    };
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize) || 20));
+    const skip = (page - 1) * pageSize;
+    const [tickets, total] = await prisma_1.prisma.$transaction([
+        prisma_1.prisma.ticket.findMany({
+            where,
+            orderBy,
+            skip,
+            take: pageSize,
+            select: {
+                id: true,
+                subject: true,
+                senderEmail: true,
+                status: true,
+                createdAt: true,
+                assignedTo: { select: { id: true, name: true } },
+            },
+        }),
+        prisma_1.prisma.ticket.count({ where }),
+    ]);
+    res.json({ data: tickets, total, page, pageSize });
+});
+app.get('/api/tickets/:id', requireAuth_1.requireAuth, async (req, res) => {
+    const ticket = await prisma_1.prisma.ticket.findUnique({
+        where: { id: req.params.id },
+        select: {
+            id: true,
+            subject: true,
+            body: true,
+            senderEmail: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+            assignedTo: { select: { id: true, name: true } },
+        },
+    });
+    if (!ticket) {
+        res.status(404).json({ error: 'Ticket not found' });
+        return;
+    }
+    res.json(ticket);
+});
+const assignTicketSchema = zod_1.z.object({
+    assignedToId: zod_1.z.string().nullable(),
+});
+const updateStatusSchema = zod_1.z.object({
+    status: zod_1.z.enum(['open', 'in_progress', 'resolved']),
+});
+app.patch('/api/tickets/:id/assign', requireAuth_1.requireAuth, async (req, res) => {
+    const result = assignTicketSchema.safeParse(req.body);
+    if (!result.success) {
+        res.status(400).json({ error: result.error.issues[0].message });
+        return;
+    }
+    const ticket = await prisma_1.prisma.ticket.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!ticket) {
+        res.status(404).json({ error: 'Ticket not found' });
+        return;
+    }
+    const { assignedToId } = result.data;
+    if (assignedToId !== null) {
+        const user = await prisma_1.prisma.user.findUnique({ where: { id: assignedToId, deletedAt: null }, select: { id: true } });
+        if (!user) {
+            res.status(404).json({ error: 'User not found' });
+            return;
+        }
+    }
+    const updated = await prisma_1.prisma.ticket.update({
+        where: { id: req.params.id },
+        data: { assignedToId },
+        select: {
+            id: true,
+            subject: true,
+            body: true,
+            senderEmail: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+            assignedTo: { select: { id: true, name: true } },
+        },
+    });
+    res.json(updated);
+});
+app.patch('/api/tickets/:id/status', requireAuth_1.requireAuth, async (req, res) => {
+    const result = updateStatusSchema.safeParse(req.body);
+    if (!result.success) {
+        res.status(400).json({ error: result.error.issues[0].message });
+        return;
+    }
+    const ticket = await prisma_1.prisma.ticket.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!ticket) {
+        res.status(404).json({ error: 'Ticket not found' });
+        return;
+    }
+    const updated = await prisma_1.prisma.ticket.update({
+        where: { id: req.params.id },
+        data: { status: result.data.status },
+        select: {
+            id: true,
+            subject: true,
+            body: true,
+            senderEmail: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+            assignedTo: { select: { id: true, name: true } },
+        },
+    });
+    res.json(updated);
+});
+const createReplySchema = zod_1.z.object({
+    body: zod_1.z.string().trim().min(1, 'Reply body is required'),
+});
+app.get('/api/tickets/:id/replies', requireAuth_1.requireAuth, async (req, res) => {
+    const ticket = await prisma_1.prisma.ticket.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!ticket) {
+        res.status(404).json({ error: 'Ticket not found' });
+        return;
+    }
+    const replies = await prisma_1.prisma.ticketReply.findMany({
+        where: { ticketId: req.params.id },
+        orderBy: { createdAt: 'asc' },
+        select: {
+            id: true,
+            body: true,
+            createdAt: true,
+            author: { select: { id: true, name: true } },
+        },
+    });
+    res.json(replies);
+});
+app.post('/api/tickets/:id/replies', requireAuth_1.requireAuth, async (req, res) => {
+    const result = createReplySchema.safeParse(req.body);
+    if (!result.success) {
+        res.status(400).json({ error: result.error.issues[0].message });
+        return;
+    }
+    const ticket = await prisma_1.prisma.ticket.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!ticket) {
+        res.status(404).json({ error: 'Ticket not found' });
+        return;
+    }
+    const reply = await prisma_1.prisma.ticketReply.create({
+        data: {
+            ticketId: req.params.id,
+            authorId: req.user.id,
+            body: result.data.body,
+        },
+        select: {
+            id: true,
+            body: true,
+            createdAt: true,
+            author: { select: { id: true, name: true } },
+        },
+    });
+    res.status(201).json(reply);
+});
+const polishReplySchema = zod_1.z.object({
+    body: zod_1.z.string().trim().min(1, 'Reply body is required'),
+});
+app.post('/api/tickets/:id/polish-reply', requireAuth_1.requireAuth, async (req, res) => {
+    const result = polishReplySchema.safeParse(req.body);
+    if (!result.success) {
+        res.status(400).json({ error: result.error.issues[0].message });
+        return;
+    }
+    const ticket = await prisma_1.prisma.ticket.findUnique({
+        where: { id: req.params.id },
+        select: { subject: true, body: true },
+    });
+    if (!ticket) {
+        res.status(404).json({ error: 'Ticket not found' });
+        return;
+    }
+    const { text } = await (0, ai_1.generateText)({
+        model: (0, openai_1.openai)('gpt-5-nano'),
+        system: 'You are a professional customer support agent. Polish the draft reply to be clear, concise, and helpful. Preserve the original meaning and information. Return only the polished reply text with no extra commentary.',
+        prompt: `Ticket subject: ${ticket.subject}\n\nCustomer message:\n${ticket.body}\n\nDraft reply to polish:\n${result.data.body}`,
+    });
+    res.json({ polishedBody: text });
+});
+app.get('/api/agents', requireAuth_1.requireAuth, async (_req, res) => {
+    const agents = await prisma_1.prisma.user.findMany({
+        where: { deletedAt: null },
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+    });
+    res.json(agents);
+});
 app.get('/api/users', requireAuth_1.requireAuth, requireAdmin_1.requireAdmin, async (_req, res) => {
     const users = await prisma_1.prisma.user.findMany({
         where: { deletedAt: null },
@@ -181,6 +437,15 @@ app.delete('/api/users/:id', requireAuth_1.requireAuth, requireAdmin_1.requireAd
     ]);
     res.status(204).send();
 });
+if (process.env.NODE_ENV === 'production') {
+    const clientDist = path_1.default.join(__dirname, '../../client/dist');
+    app.use(express_1.default.static(clientDist));
+    app.get('*', (_req, res) => {
+        res.sendFile(path_1.default.join(clientDist, 'index.html'));
+    });
+}
+// Must be after all routes, before any other error middleware
+Sentry.setupExpressErrorHandler(app);
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });

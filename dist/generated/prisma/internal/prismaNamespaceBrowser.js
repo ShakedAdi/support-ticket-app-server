@@ -48,7 +48,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NullsOrder = exports.QueryMode = exports.SortOrder = exports.VerificationScalarFieldEnum = exports.AccountScalarFieldEnum = exports.SessionScalarFieldEnum = exports.TicketScalarFieldEnum = exports.UserScalarFieldEnum = exports.TransactionIsolationLevel = exports.ModelName = exports.AnyNull = exports.JsonNull = exports.DbNull = exports.NullTypes = exports.Decimal = void 0;
+exports.NullsOrder = exports.QueryMode = exports.SortOrder = exports.VerificationScalarFieldEnum = exports.AccountScalarFieldEnum = exports.SessionScalarFieldEnum = exports.TicketReplyScalarFieldEnum = exports.TicketScalarFieldEnum = exports.UserScalarFieldEnum = exports.TransactionIsolationLevel = exports.ModelName = exports.AnyNull = exports.JsonNull = exports.DbNull = exports.NullTypes = exports.Decimal = void 0;
 const runtime = __importStar(require("@prisma/client/runtime/index-browser"));
 exports.Decimal = runtime.Decimal;
 exports.NullTypes = {
@@ -77,6 +77,7 @@ exports.AnyNull = runtime.AnyNull;
 exports.ModelName = {
     User: 'User',
     Ticket: 'Ticket',
+    TicketReply: 'TicketReply',
     Session: 'Session',
     Account: 'Account',
     Verification: 'Verification'
@@ -110,6 +111,13 @@ exports.TicketScalarFieldEnum = {
     assignedToId: 'assignedToId',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
+};
+exports.TicketReplyScalarFieldEnum = {
+    id: 'id',
+    ticketId: 'ticketId',
+    authorId: 'authorId',
+    body: 'body',
+    createdAt: 'createdAt'
 };
 exports.SessionScalarFieldEnum = {
     id: 'id',
