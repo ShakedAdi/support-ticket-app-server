@@ -1,4 +1,5 @@
-import 'dotenv/config';
+import './instrument';
+import * as Sentry from '@sentry/node';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -474,6 +475,9 @@ app.delete('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
 
   res.status(204).send();
 });
+
+// Must be after all routes, before any other error middleware
+Sentry.setupExpressErrorHandler(app);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
