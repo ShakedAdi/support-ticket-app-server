@@ -144,6 +144,27 @@ app.get('/api/tickets', requireAuth, async (req, res) => {
   res.json({ data: tickets, total, page, pageSize });
 });
 
+app.get('/api/tickets/:id', requireAuth, async (req, res) => {
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: req.params.id },
+    select: {
+      id: true,
+      subject: true,
+      body: true,
+      senderEmail: true,
+      status: true,
+      createdAt: true,
+      updatedAt: true,
+      assignedTo: { select: { id: true, name: true } },
+    },
+  });
+  if (!ticket) {
+    res.status(404).json({ error: 'Ticket not found' });
+    return;
+  }
+  res.json(ticket);
+});
+
 app.get('/api/users', requireAuth, requireAdmin, async (_req, res) => {
   const users = await prisma.user.findMany({
     where: { deletedAt: null },
