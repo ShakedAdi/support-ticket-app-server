@@ -24,34 +24,48 @@ enum TicketStatus {
 }
 
 model User {
-  id            String    @id
+  id            String        @id
   name          String
-  email         String    @unique
+  email         String        @unique
   emailVerified Boolean
   image         String?
-  role          Role      @default(agent)
+  role          Role          @default(agent)
   createdAt     DateTime
   updatedAt     DateTime
   deletedAt     DateTime?
   sessions      Session[]
   accounts      Account[]
   tickets       Ticket[]
+  replies       TicketReply[]
 
   @@map("user")
 }
 
 model Ticket {
-  id           String       @id @default(cuid())
+  id           String        @id @default(cuid())
   subject      String
   body         String
   senderEmail  String
-  status       TicketStatus @default(open)
-  assignedTo   User?        @relation(fields: [assignedToId], references: [id])
+  status       TicketStatus  @default(open)
+  assignedTo   User?         @relation(fields: [assignedToId], references: [id])
   assignedToId String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  replies      TicketReply[]
 
   @@map("ticket")
+}
+
+model TicketReply {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+
+  @@map("ticket_reply")
 }
 
 model Session {

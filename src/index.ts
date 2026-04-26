@@ -245,6 +245,59 @@ app.patch('/api/tickets/:id/status', requireAuth, async (req, res) => {
   res.json(updated);
 });
 
+const createReplySchema = z.object({
+  body: z.string().trim().min(1, 'Reply body is required'),
+});
+
+app.get('/api/tickets/:id/replies', requireAuth, async (req, res) => {
+  const ticket = await prisma.ticket.findUnique({ where: { id: req.params.id }, select: { id: true } });
+  if (!ticket) {
+    res.status(404).json({ error: 'Ticket not found' });
+    return;
+  }
+  const replies = await prisma.ticketReply.findMany({
+    where: { ticketId: req.params.id },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      body: true,
+      createdAt: true,
+      author: { select: { id: true, name: true } },
+    },
+  });
+  res.json(replies);
+});
+
+app.post('/api/tickets/:id/replies', requireAuth, async (req, res) => {
+  const result = createReplySchema.safeParse(req.body);
+  if (!result.success) {
+    res.status(400).json({ error: result.error.issues[0].message });
+    return;
+  }
+
+  const ticket = await prisma.ticket.findUnique({ where: { id: req.params.id }, select: { id: true } });
+  if (!ticket) {
+    res.status(404).json({ error: 'Ticket not found' });
+    return;
+  }
+
+  const reply = await prisma.ticketReply.create({
+    data: {
+      ticketId: req.params.id,
+      authorId: req.user!.id,
+      body: result.data.body,
+    },
+    select: {
+      id: true,
+      body: true,
+      createdAt: true,
+      author: { select: { id: true, name: true } },
+    },
+  });
+
+  res.status(201).json(reply);
+});
+
 app.get('/api/agents', requireAuth, async (_req, res) => {
   const agents = await prisma.user.findMany({
     where: { deletedAt: null },
