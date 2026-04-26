@@ -169,6 +169,10 @@ const assignTicketSchema = z.object({
   assignedToId: z.string().nullable(),
 });
 
+const updateStatusSchema = z.object({
+  status: z.enum(['open', 'in_progress', 'resolved']),
+});
+
 app.patch('/api/tickets/:id/assign', requireAuth, async (req, res) => {
   const result = assignTicketSchema.safeParse(req.body);
   if (!result.success) {
@@ -195,6 +199,37 @@ app.patch('/api/tickets/:id/assign', requireAuth, async (req, res) => {
   const updated = await prisma.ticket.update({
     where: { id: req.params.id },
     data: { assignedToId },
+    select: {
+      id: true,
+      subject: true,
+      body: true,
+      senderEmail: true,
+      status: true,
+      createdAt: true,
+      updatedAt: true,
+      assignedTo: { select: { id: true, name: true } },
+    },
+  });
+
+  res.json(updated);
+});
+
+app.patch('/api/tickets/:id/status', requireAuth, async (req, res) => {
+  const result = updateStatusSchema.safeParse(req.body);
+  if (!result.success) {
+    res.status(400).json({ error: result.error.issues[0].message });
+    return;
+  }
+
+  const ticket = await prisma.ticket.findUnique({ where: { id: req.params.id }, select: { id: true } });
+  if (!ticket) {
+    res.status(404).json({ error: 'Ticket not found' });
+    return;
+  }
+
+  const updated = await prisma.ticket.update({
+    where: { id: req.params.id },
+    data: { status: result.data.status },
     select: {
       id: true,
       subject: true,
