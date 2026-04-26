@@ -165,6 +165,60 @@ app.get('/api/tickets/:id', requireAuth, async (req, res) => {
   res.json(ticket);
 });
 
+const assignTicketSchema = z.object({
+  assignedToId: z.string().nullable(),
+});
+
+app.patch('/api/tickets/:id/assign', requireAuth, async (req, res) => {
+  const result = assignTicketSchema.safeParse(req.body);
+  if (!result.success) {
+    res.status(400).json({ error: result.error.issues[0].message });
+    return;
+  }
+
+  const ticket = await prisma.ticket.findUnique({ where: { id: req.params.id }, select: { id: true } });
+  if (!ticket) {
+    res.status(404).json({ error: 'Ticket not found' });
+    return;
+  }
+
+  const { assignedToId } = result.data;
+
+  if (assignedToId !== null) {
+    const user = await prisma.user.findUnique({ where: { id: assignedToId, deletedAt: null }, select: { id: true } });
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+  }
+
+  const updated = await prisma.ticket.update({
+    where: { id: req.params.id },
+    data: { assignedToId },
+    select: {
+      id: true,
+      subject: true,
+      body: true,
+      senderEmail: true,
+      status: true,
+      createdAt: true,
+      updatedAt: true,
+      assignedTo: { select: { id: true, name: true } },
+    },
+  });
+
+  res.json(updated);
+});
+
+app.get('/api/agents', requireAuth, async (_req, res) => {
+  const agents = await prisma.user.findMany({
+    where: { deletedAt: null },
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' },
+  });
+  res.json(agents);
+});
+
 app.get('/api/users', requireAuth, requireAdmin, async (_req, res) => {
   const users = await prisma.user.findMany({
     where: { deletedAt: null },
