@@ -10,9 +10,11 @@
     "seed": "ts-node --transpile-only prisma/seed.ts"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.53",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
     "@types/pg": "^8.20.0",
+    "ai": "^6.0.168",
     "better-auth": "^1.6.4",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

@@ -6,6 +6,8 @@ import rateLimit from 'express-rate-limit';
 import { randomBytes, scrypt } from 'node:crypto';
 import { z } from 'zod';
 import { toNodeHandler } from 'better-auth/node';
+import { openai } from '@ai-sdk/openai';
+import { generateText } from 'ai';
 import { prisma } from './lib/prisma';
 import { auth } from './lib/auth';
 import { requireAuth } from './middleware/requireAuth';
@@ -296,6 +298,36 @@ app.post('/api/tickets/:id/replies', requireAuth, async (req, res) => {
   });
 
   res.status(201).json(reply);
+});
+
+const polishReplySchema = z.object({
+  body: z.string().trim().min(1, 'Reply body is required'),
+});
+
+app.post('/api/tickets/:id/polish-reply', requireAuth, async (req, res) => {
+  const result = polishReplySchema.safeParse(req.body);
+  if (!result.success) {
+    res.status(400).json({ error: result.error.issues[0].message });
+    return;
+  }
+
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: req.params.id },
+    select: { subject: true, body: true },
+  });
+  if (!ticket) {
+    res.status(404).json({ error: 'Ticket not found' });
+    return;
+  }
+
+  const { text } = await generateText({
+    model: openai('gpt-5-nano'),
+    system:
+      'You are a professional customer support agent. Polish the draft reply to be clear, concise, and helpful. Preserve the original meaning and information. Return only the polished reply text with no extra commentary.',
+    prompt: `Ticket subject: ${ticket.subject}\n\nCustomer message:\n${ticket.body}\n\nDraft reply to polish:\n${result.data.body}`,
+  });
+
+  res.json({ polishedBody: text });
 });
 
 app.get('/api/agents', requireAuth, async (_req, res) => {
