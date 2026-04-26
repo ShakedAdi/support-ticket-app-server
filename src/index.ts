@@ -119,19 +119,29 @@ app.get('/api/tickets', requireAuth, async (req, res) => {
       : {}),
   };
 
-  const tickets = await prisma.ticket.findMany({
-    where,
-    orderBy,
-    select: {
-      id: true,
-      subject: true,
-      senderEmail: true,
-      status: true,
-      createdAt: true,
-      assignedTo: { select: { id: true, name: true } },
-    },
-  });
-  res.json(tickets);
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize as string) || 20));
+  const skip = (page - 1) * pageSize;
+
+  const [tickets, total] = await prisma.$transaction([
+    prisma.ticket.findMany({
+      where,
+      orderBy,
+      skip,
+      take: pageSize,
+      select: {
+        id: true,
+        subject: true,
+        senderEmail: true,
+        status: true,
+        createdAt: true,
+        assignedTo: { select: { id: true, name: true } },
+      },
+    }),
+    prisma.ticket.count({ where }),
+  ]);
+
+  res.json({ data: tickets, total, page, pageSize });
 });
 
 app.get('/api/users', requireAuth, requireAdmin, async (_req, res) => {
